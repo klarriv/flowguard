@@ -1,5 +1,7 @@
+# Personal
 _notebooks/
 _pictures/
+function_template.py
 # Python
 __pycache__/
 *.pyc

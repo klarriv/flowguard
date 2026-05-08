@@ -1,0 +1,13 @@
+_notebooks/
+_pictures/
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Secrets / local config
+.env

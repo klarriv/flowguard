@@ -31,7 +31,10 @@ def vol_truncated_rect_pyramid(A, B, a, b, h):
     """
     A1 = A*B
     A2 = a*b
-    return h/3 * (A1 + A2 + math.sqrt(A1 * A2))
+    avg_length = (A+a)/2
+    avg_width =  (B+b)/2
+    A_mid = avg_length * avg_width
+    return h/6 * (A1 + A2 + 4*A_mid)
 
 def vol_cylinder(r, h):
     """

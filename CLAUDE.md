@@ -22,8 +22,9 @@ FlowGuard is a Streamlit engineering-calculation app focused on explosion protec
 
 ### 1. Calculation engine (`explosion_protection/`)
 
-Pure-Python library with no Streamlit dependency. The two key files:
+Pure-Python library with no Streamlit dependency. Key files:
 
+- `nfpa_68_ch6_equations.py` — general venting fundamentals shared across Chapters 7/8 (§6.1–§6.8): deflagration index, enclosure design pressure/reaction forces, and the §6.4.3 hydraulic diameter/L-D equations (`hydraulic_diameter_circular/square/rectangular`, `effective_area`, `ld_ratio`).
 - `nfpa_68_ch8_equations.py` — raw equation implementations (§8.2–§8.5 formulas, each function maps directly to one NFPA equation)
 - `nfpa_68_ch8_dust_vent.py` — orchestrator that sequences the equations into the full calculation chain (Av0 → Av1 → Av2 → Av3 → Av4 → Avf). This file owns the input dataclasses (`Enclosure`, `Dust`, `Vent`, `Duct`, `TurbulenceInputs`, `PartialVolumeInputs`), enums (`TurbulenceMode`, `SubatmosphericMethod`), result dataclass (`DustVentResult`), and the two public entry points: `vent_area_dust()` and `dust_collector_vent_area()`.
 
@@ -52,7 +53,9 @@ Run IDs are 8-character UUID hex strings. Runs are loaded back into the UI via `
 
 ### 4. Core utilities (`core/`)
 
-Standalone geometry helpers (`geometry.py`) used by calculation modules. Not Streamlit-specific.
+Standalone geometry helpers (`geometry.py`) used by calculation modules. Not Streamlit-specific. Includes shape volume formulas (`vol_cuboid`, `vol_cylinder`, `vol_truncated_cone`, `vol_truncated_rect_pyramid`), segment-stack aggregation (`segment_volume`, `enclosure_volume_and_length`), and §6.4.3 hydraulic diameter orchestration (`enclosure_hydraulic_diameter`, `largest_cross_section`) that picks the circular/square/rectangular formula in `nfpa_68_ch6_equations.py` matching the shape of the enclosure's largest cross section. `enclosure_catalog.py` holds named geometry templates (circular/rectangular presets, Donaldson family/model catalog).
+
+Vent location is intentionally not a parameter anywhere in this chain: per §6.4.3.2/.3, the caller is expected to already pass Veff/H as the volume/length of just the part of the enclosure the flame must traverse to reach the vent (or, per §6.4.3.4, conservatively the whole enclosure) — not something these functions can determine themselves. Multiple vents at different elevations along the same axis (§6.4.3.2.2, which calls for a per-section L/D) is a known, unsupported case.
 
 ## Key conventions
 

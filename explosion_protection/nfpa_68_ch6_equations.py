@@ -183,6 +183,26 @@ def total_impulse(Fr, tf):
 # §6.4.3 — L/D of Elongated Enclosures
 # ──────────────────────────────────────────────────────────────────────────────
 
+def effective_area(Veff, H):
+    """
+    Effective cross-sectional area of an enclosure, for use in the
+    hydraulic diameter equations below.
+
+    Args:
+        Veff (float): Effective volume — the volume of the part of the
+                      enclosure through which the flame passes as it
+                      travels along H [m³]
+        H    (float): Maximum flame travel length [m]
+
+    Returns:
+        float: Effective cross-sectional area Aeff [m²]
+
+    Reference:
+        NFPA 68 (2023), §6.4.3.5
+    """
+    return Veff / H
+
+
 def hydraulic_diameter(Aeff, p):
     """
     Effective hydraulic diameter of an enclosure cross section, general form.

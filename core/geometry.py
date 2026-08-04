@@ -1,5 +1,10 @@
 import math
 
+from explosion_protection.nfpa_68_ch6_equations import (
+    effective_area, hydraulic_diameter_circular,
+    hydraulic_diameter_square, hydraulic_diameter_rectangular,
+)
+
 # Volume calculation of common 3D geometries
 def vol_cuboid(a, b, h):
     """
@@ -103,29 +108,50 @@ def enclosure_volume_and_length(segments):
     return V, L
 
 
-def equivalent_diameter(V, L):
+def _segment_cross_section(s):
     """
-    Diameter of a cylinder with the same volume and length as the enclosure.
-
-    Args:
-        V (float): Total volume [m³]
-        L (float): Total length [m]
+    Own maximum cross-sectional area and (shape family, aspect ratio) for a
+    single segment. Used by enclosure_hydraulic_diameter() to find "the
+    largest cross section" per NFPA 68 §6.4.3.6.2/.3.
 
     Returns:
-        float: Equivalent diameter [m], 0.0 if L <= 0
+        tuple: (area [m²], (family, R)) — family is "circular" or
+               "rectangular"; R is None for circular segments.
     """
-    return 2.0 * math.sqrt(V / (math.pi * L)) if L > 0 else 0.0
+    if s["type"] in ("cylinder", "truncated_cone"):
+        r = max(s.get("r", 0.0), s.get("R", 0.0))
+        return math.pi * r ** 2, ("circular", None)
+    A = s.get("A", s.get("a"))
+    B = s.get("B", s.get("b"))
+    return A * B, ("rectangular", max(A, B) / min(A, B))
 
 
-def ld_ratio(L, D):
+def enclosure_hydraulic_diameter(segments, V, L):
     """
-    Enclosure L/D ratio.
+    Effective hydraulic diameter Dhe for a segmented enclosure, using the
+    NFPA 68 §6.4.3.6 formula that matches the shape of its largest cross
+    section (circular, square, or rectangular).
+
+    V and L must already represent Veff and H per §6.4.3.2/.3 — i.e. the
+    segment stack should be modeled to end at the vent, not necessarily at
+    the physical extent of the enclosure. Does not support multiple vents
+    at different elevations along the same axis (§6.4.3.2.2), which would
+    require a per-section L/D rather than one global value.
 
     Args:
-        L (float): Total length [m]
-        D (float): Characteristic diameter [m]
+        segments (list[dict]): Segment stack — see segment_volume() for
+            the dict schema.
+        V (float): Effective volume Veff [m³]
+        L (float): Maximum flame travel length H [m]
 
     Returns:
-        float: L/D [-], 0.0 if D <= 0
+        float: Effective hydraulic diameter Dhe [m]
     """
-    return L / D if D > 0 else 0.0
+    Aeff = effective_area(V, L)
+    _, (family, R) = max((_segment_cross_section(s) for s in segments),
+                          key=lambda x: x[0])
+    if family == "circular":
+        return hydraulic_diameter_circular(Aeff)
+    if R < 1.2:
+        return hydraulic_diameter_square(Aeff)
+    return hydraulic_diameter_rectangular(Aeff, R)

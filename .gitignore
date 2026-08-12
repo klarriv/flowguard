@@ -1,3 +1,9 @@
+# App repo (tracked separately in flowguard-app)
+app/
+.streamlit/
+projects/
+CLAUDE.md
+
 # Personal
 _notebooks/
 _pictures/

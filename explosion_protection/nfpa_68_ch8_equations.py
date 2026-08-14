@@ -621,7 +621,10 @@ def vent_area_duct(Av4, Lduct, V, Pstat, KSt, K, K0=K0_REFERENCE,
         max_iter (int):   Maximum iterations before raising. Default 200.
 
     Returns:
-        float: Required vent area with duct Avf [m²]
+        tuple:
+            Avf (float): Required vent area with duct [m²]
+            E1  (float): Duct intermediate parameter at the converged Avf [-]
+            E2  (float): Duct intermediate parameter at the converged Avf [-]
 
     Raises:
         RuntimeError: If Avf does not converge within max_iter iterations, or
@@ -639,13 +642,13 @@ def vent_area_duct(Av4, Lduct, V, Pstat, KSt, K, K0=K0_REFERENCE,
 
         if abs(Avf_new - Avf) < tol:
             # Check we are on the physically meaningful root
-            E1_final, _ = _e1_e2(Avf_new, Lduct, V, Pstat, KSt)
+            E1_final, E2_final = _e1_e2(Avf_new, Lduct, V, Pstat, KSt)
             if E1_final > 1.0:
                 raise RuntimeError(
                     f"Converged on the upper (artifact) root: E1 = {E1_final:.4f} > 1. "
                     "Reduce duct length, increase Pred, or strengthen the vessel. (§8.5.3, A.8.5b)"
                 )
-            return Avf_new
+            return Avf_new, E1_final, E2_final
 
         Avf = Avf_new
 
@@ -708,7 +711,7 @@ def pred_from_vent_area_duct(Avf_installed, Lduct, V, Pstat, KSt, K,
 
     def _residual(Pred_try):
         Av4_try = av_func(Pred_try, **kw)
-        Avf_try = vent_area_duct(Av4_try, Lduct, V, Pstat, KSt, K, K0)
+        Avf_try, _, _ = vent_area_duct(Av4_try, Lduct, V, Pstat, KSt, K, K0)
         return Avf_try - Avf_installed
 
     # Bracket: find Pred_lo (Avf > installed) and Pred_hi (Avf < installed)
@@ -761,7 +764,6 @@ def max_duct_length(KSt, Dh, Pmax, Pred, V, Avf):
         tuple:
             Leff_max (float): Maximum allowable effective duct length [m]
             Ldusty   (float): Dusty flame length parameter [m]
-            ddt_ok   (bool):  True when min(Lduct, Ldusty) ≤ Leff_max
 
     Reference:
         NFPA 68 (2023), §8.5.9, Eq. 8.5.9; Annex A.8.5 (example steps 9–10)

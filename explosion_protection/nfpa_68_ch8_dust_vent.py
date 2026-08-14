@@ -351,8 +351,12 @@ class DustVentResult:
         Av2                   (float): After turbulence correction §8.2.4 [m²]
         Av3                   (float): After panel inertia correction §8.3 [m²]
         Av4                   (float): After partial volume correction §8.4 [m²]
-        Avf                   (float): Final vent area after duct correction §8.5 [m²]
-                                       Equal to Av4 when no duct is present.
+        Avf                   (float): Vent area after duct correction §8.5 [m²].
+                                       Equal to Av4 when no duct is present. This is
+                                       strictly the §8.5 value — it does NOT include
+                                       the §8.7.2 dust-collector filter-obstruction
+                                       increase; use Av_final for the true bottom-line
+                                       required area.
         pressure_regime       (InitialPressureRegime): Branch taken in §8.2.1.
         subatm_method         (SubatmosphericMethod):  Subatm equation used,
                                                        or None if not subatm.
@@ -382,6 +386,14 @@ class DustVentResult:
         ddt_ok                (bool):  True when DDT limit is satisfied (§8.5.9).
                                        None if no duct.
         ld_correction_active  (bool):  True when LD > 2 and §8.2.2.3 was applied.
+        Av_final              (float): The true final required vent area [m²] — the
+                                       number to actually design to. Equal to Avf,
+                                       except for dust collectors with the §8.7.2
+                                       flexible-filter increase applied, in which
+                                       case Av_final = Avf * 1.25.
+        flexible_filters_bump_active (bool): True when the §8.7.2 25% increase
+                                       (flexible filters above the vent free end,
+                                       no internal restraints) was applied.
     """
     Av0:                   float
     Av1:                   float
@@ -408,6 +420,8 @@ class DustVentResult:
     Ldusty:                Optional[float]
     ddt_ok:                Optional[bool]
     ld_correction_active:  bool
+    Av_final:               float
+    flexible_filters_bump_active: bool
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -709,7 +723,7 @@ def _step_duct(
     if duct.Lduct < duct.Dh:
         return Av4, False, None, None, None, None, None
     
-    Avf = vent_area_duct(
+    Avf, E1, E2 = vent_area_duct(
         Av4, duct.Lduct, enclosure.V,
         vent.Pstat, dust.KSt, duct.K, duct.K0,
     )
@@ -720,11 +734,6 @@ def _step_duct(
     )
     Leff    = min(duct.Lduct, Ldusty)
     ddt_ok  = Leff <= Leff_max
-
-    # Recover E1 and E2 at the converged Avf for reporting
-    denom = (1 + 1.54 * vent.Pstat ** (4 / 3)) * dust.KSt * enclosure.V ** 0.75
-    E1    = Avf * duct.Lduct / enclosure.V
-    E2    = 1e4 * Avf / denom
 
     return Avf, True, E1, E2, Leff_max, Ldusty, ddt_ok
 
@@ -836,6 +845,8 @@ def vent_area_dust(
         Ldusty=Ldusty,
         ddt_ok=ddt_ok,
         ld_correction_active=ld_active,
+        Av_final=Avf,
+        flexible_filters_bump_active=False,
     )
 
 
@@ -866,9 +877,10 @@ def dust_collector_vent_area(
         - L/D for the collector is H/Dhe where H is the longest dirty-side
           dimension. Caller must set enclosure.LD accordingly. (§8.7.1.1)
         - If flexible filters are located totally above the vent free end
-          and no internal restraints are provided, the calculated vent area
-          is increased by 25% per §8.7.2. Set flexible_filters_above_vent=True
-          to apply this multiplier.
+          and no internal restraints are provided, the required vent area
+          is increased by 25% per §8.7.2, reflected in Av_final (not Avf —
+          see Returns below). Set flexible_filters_above_vent=True to apply
+          this multiplier.
 
     Caller responsibilities before calling this function:
         - Set enclosure.V  = total dirty-side volume (Veff).   §8.7.1.2
@@ -890,9 +902,12 @@ def dust_collector_vent_area(
         subatm_method            (SubatmosphericMethod): Subatm equation choice.
 
     Returns:
-        DustVentResult: Avf is the final required area [m²] (after §8.7.2
-                        multiplier if applicable). All intermediate areas
-                        and Av0–Av4 reflect the pre-multiplier chain.
+        DustVentResult: Avf remains strictly the §8.5 duct-corrected area,
+                        unaffected by §8.7.2 — Av_final is the true required
+                        area to design to, equal to Avf * 1.25 when
+                        flexible_filters_above_vent is True (and
+                        flexible_filters_bump_active is set accordingly),
+                        otherwise equal to Avf.
 
     Reference:
         NFPA 68 (2023), §8.7
@@ -903,14 +918,12 @@ def dust_collector_vent_area(
     )
 
     if flexible_filters_above_vent:
-        # §8.7.2 — increase required vent area by 25%
-        multiplied_Avf = result.Avf * 1.25
-        # Return a modified result with Avf updated.
-        # All intermediate values (Av0–Av4) are unchanged — the 25% factor
-        # is a post-chain multiplier applied only to the final area.
-        return DustVentResult(
-            **{k: (multiplied_Avf if k == "Avf" else v)
-               for k, v in result.__dict__.items()}
+        # §8.7.2 — increase required vent area by 25%, kept distinct from Avf
+        from dataclasses import replace
+        return replace(
+            result,
+            Av_final=result.Avf * 1.25,
+            flexible_filters_bump_active=True,
         )
 
     return result

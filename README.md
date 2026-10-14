@@ -9,7 +9,7 @@ workspcace/
 │   └── fume_hoods.py                   # Capture/face velocity, air exchange, slot sizing
 ├── core/
 │   ├── fluid_properties.py             # Dynamic viscosity, density, etc.
-│   ├── geometry.py                     # Volumes, hydraulic diameter, elbow centerline
+│   ├── geometry.py                     # Shape volumes, segment-stack volume/length, elbow centerline
 |   ├── external_data/
 │   │   └── litterature/                # UNUSED: Placeholder for future litterature data
 │   │       ├── FUTURE 

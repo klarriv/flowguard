@@ -1,6 +1,6 @@
 """
-nfpa_68_ch7_gas_vent.py
-=======================
+nfpa_68_ch7_orchestrator.py
+===========================
 Orchestrator for NFPA 68 (2023) Chapter 7 — Deflagration Vent Area for Gas Mixtures and Mists.
 
 Calculation sequence
@@ -13,7 +13,7 @@ Calculation sequence
 
 Usage
 -----
-    from nfpa_68_ch7_gas_vent import Enclosure, Gas, Vent, Duct, vent_area_gas
+    from nfpa_68_ch7_orchestrator import Enclosure, Gas, Vent, Duct, vent_area_gas
 
     enclosure = Enclosure(As=45.0, Dhe=3.2, Venc=60.0, LD=1.8)
     gas       = Gas(Su=0.45, Pmax=8.0, x_st=0.04)

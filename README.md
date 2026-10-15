@@ -26,10 +26,15 @@ workspcace/
 └── duct_design/
     └── square_duct.py                  # SMACNA square duct design
 ├── explosion_protection/
-│   ├── explosion_dynamics.py
-│   ├── nfpa_68_2023_calc.py            # NFPA 68 (bucket elevator, dust collector)
-│   ├── en_14491_2012_calc.py           # EN standard venting
-│   └── structural_resistance.py        # Dust collector pressure resistance
+│   ├── nfpa_68_ch6_equations.py        # NFPA 68 (2023) §6 general venting fundamentals, §6.4.3 L/D equations
+│   ├── nfpa_68_ch6_orchestrator.py     # §6.4.3 hydraulic diameter from a segment stack
+│   ├── nfpa_68_ch7_equations.py        # Ch. 7 gas/mist venting equations
+│   ├── nfpa_68_ch7_orchestrator.py     # Ch. 7 vent area chain (vent_area_gas)
+│   ├── nfpa_68_ch8_equations.py        # Ch. 8 dust venting equations
+│   ├── nfpa_68_ch8_orchestrator.py     # Ch. 8 vent area chain (vent_area_dust, dust_collector_vent_area)
+│   ├── explosion_dynamics.py           # PLANNED
+│   ├── en_14491_2012_calc.py           # PLANNED: EN standard venting
+│   └── structural_resistance.py        # PLANNED: Dust collector pressure resistance
 ├── fluid_systems/
 │   ├── ductwork.py                     # Basic ductulator, flexible ducting loss
 │   ├── pressure_drop.py                # ACGIH method, Lamson method, pneumatic conveying
@@ -37,3 +42,12 @@ workspcace/
 │   └── fans_pumps.py                   # Pressure blowers, vacuum pumps, fan curves
 ├── material_handling/
 │   └── rotary_valves.py                # Rotary valve sizing
+
+# Naming convention
+
+Each calculation family is split into two files sharing one prefix:
+
+- `<prefix>_equations.py` - one function per source equation; the docstring cites the equation number and page.
+- `<prefix>_orchestrator.py` - organises the equations into the calculation method (input dataclasses, step sequence, result object).
+
+The pair sorts side by side, e.g. `nfpa_68_ch8_equations.py` / `nfpa_68_ch8_orchestrator.py`. Shared helpers and catalogs under `core/` are not equation families and do not follow the pair convention.

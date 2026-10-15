@@ -1,6 +1,6 @@
 """
-nfpa_68_ch8_dust_vent.py
-========================
+nfpa_68_ch8_orchestrator.py
+===========================
 Orchestrator for NFPA 68 (2023) Chapter 8 — Deflagration Vent Area for
 Combustible Dusts and Hybrid Mixtures.
 
@@ -43,7 +43,7 @@ Special-application helpers (non-iterative, no §8.8)
 
 Usage — standard process enclosure
 -----------------------------------
-    from nfpa_68_ch8_dust_vent import (
+    from nfpa_68_ch8_orchestrator import (
         Enclosure, Dust, Vent, Duct, TurbulenceMode, vent_area_dust
     )
 

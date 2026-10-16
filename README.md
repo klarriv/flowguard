@@ -4,7 +4,8 @@ workspcace/
 ├── README.md                           # Project overview (this file)
 ├── collection_systems/
 │   ├── dust_collectors.py              # Sizing calculations
-│   ├── cyclones.py                     # Cyclone sizing
+│   ├── cyclone_muschelknautz_equations.py     # Hoffmann & Stein Ch. 6 (Muschelknautz) equations
+│   ├── cyclone_muschelknautz_orchestrator.py  # cyclone_performance(): cut size, efficiency, Δp, emission; PSD class
 │   ├── mist_collectors.py              # Open area, air exchange, ambient methods
 │   └── fume_hoods.py                   # Capture/face velocity, air exchange, slot sizing
 ├── core/

@@ -10,6 +10,7 @@ workspcace/
 ├── core/
 │   ├── fluid_properties.py             # Dynamic viscosity, density, etc.
 │   ├── geometry.py                     # Shape volumes, segment-stack volume/length, elbow centerline
+│   ├── units.py                        # Named pint-based conversions: flow, velocity, length, pressure
 |   ├── external_data/
 │   │   └── litterature/                # UNUSED: Placeholder for future litterature data
 │   │       ├── FUTURE 
@@ -36,8 +37,9 @@ workspcace/
 │   ├── en_14491_2012_calc.py           # PLANNED: EN standard venting
 │   └── structural_resistance.py        # PLANNED: Dust collector pressure resistance
 ├── fluid_systems/
-│   ├── ductwork.py                     # Basic ductulator, flexible ducting loss
-│   ├── pressure_drop.py                # ACGIH method, Lamson method, pneumatic conveying
+│   ├── duct_flow.py                    # Round-duct flow/diameter/velocity (continuity), solve_round_duct()
+│   ├── ductwork.py                     # PLANNED: flexible ducting loss
+│   ├── pressure_drop.py                # PLANNED: ACGIH method, Lamson method, pneumatic conveying
 │   ├── components.py                   # Butterfly valves
 │   └── fans_pumps.py                   # Pressure blowers, vacuum pumps, fan curves
 ├── material_handling/

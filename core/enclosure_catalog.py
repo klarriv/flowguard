@@ -3,14 +3,20 @@ Enclosure geometry catalog.
 
 Provides ready-made segment stacks (see core.geometry for the segment dict
 schema) for common enclosure shapes and for named Donaldson dust-collector
-models. All dimensions are SI (metres).
+models. All dimensions returned are SI (metres).
 
-The DONALDSON_CATALOG values below are placeholders — real dimensional data
-for each family/model has not been supplied yet. The structure and accessor
-functions are stable; only the numbers need to be replaced.
+Donaldson DLMC data comes from "DLMC Dirty Side Dimensions.xlsx"
+(flowguard-app/docs_for_claude_code/Donaldson db). It is transcribed here in
+inches, as in the sheet, and converted to metres with core.units at import.
+Each model is a rectangular body (cuboid) plus one hopper chosen from the
+options available for its width; a hopper may be several identical copies
+side by side along the body length (segment "cols").
 """
 
+import copy
 from dataclasses import dataclass, field
+
+from core.units import in_to_m
 
 
 def circular_enclosure_default():
@@ -31,9 +37,10 @@ def rectangular_enclosure_default():
 
 @dataclass
 class DonaldsonModel:
-    """A single Donaldson dust-collector model and its enclosure geometry."""
+    """A Donaldson dust-collector model: one body and its hopper options."""
     name: str
-    segments: list = field(default_factory=list)
+    body: dict                                      # cuboid segment [m]
+    hoppers: dict = field(default_factory=dict)     # hopper name -> segment [m]
 
 
 @dataclass
@@ -43,29 +50,76 @@ class DonaldsonFamily:
     models: dict  # model name -> DonaldsonModel
 
 
-# Placeholder catalog — dimensions are illustrative, not manufacturer data.
-DONALDSON_CATALOG = {
-    "Torit DFO": DonaldsonFamily("Torit DFO", {
-        "DFO 2-4": DonaldsonModel("DFO 2-4", segments=[
-            {"type": "cylinder",       "r": 0.6, "h": 1.2},
-            {"type": "truncated_cone", "R": 0.6, "r": 0.15, "h": 0.6},
-        ]),
-        "DFO 4-12": DonaldsonModel("DFO 4-12", segments=[
-            {"type": "cylinder",       "r": 0.9, "h": 1.8},
-            {"type": "truncated_cone", "R": 0.9, "r": 0.2, "h": 0.9},
-        ]),
-    }),
-    "Torit PowerCore": DonaldsonFamily("Torit PowerCore", {
-        "CPC 2": DonaldsonModel("CPC 2", segments=[
-            {"type": "cuboid",                 "a": 0.8, "b": 0.8, "h": 1.0},
-            {"type": "truncated_rect_pyramid", "A": 0.8, "B": 0.8, "a": 0.15, "b": 0.15, "h": 0.4},
-        ]),
-        "CPC 4": DonaldsonModel("CPC 4", segments=[
-            {"type": "cuboid",                 "a": 1.2, "b": 1.2, "h": 1.4},
-            {"type": "truncated_rect_pyramid", "A": 1.2, "B": 1.2, "a": 0.2, "b": 0.2, "h": 0.6},
-        ]),
-    }),
+# ── DLMC source data (inches, as in the spreadsheet) ──────────────────────────
+# Model "W/H/15": W modules wide (along body length a), H modules high.
+_DLMC_MODULE_A_IN = 39.47609    # body length per module of width
+_DLMC_B_IN        = 68.8421     # body depth, same for every model
+_DLMC_BODY_H_IN   = {2: 61.11, 3: 83.904, 4: 123.57, 5: 148.404, 6: 171.234, 8: 216.892}
+
+# (W, H) in sheet order. 1/7/15 and 3/7/15 are left out until the 7-high
+# body height is known (blank in the sheet).
+_DLMC_MODELS = [
+    (1, 2), (1, 3), (1, 4), (2, 2), (1, 5), (2, 3), (2, 4), (3, 3),
+    (2, 5), (2, 6), (3, 5), (2, 8), (3, 6), (4, 5), (3, 8), (4, 8),
+]
+
+# Hopper options by body width W: (name, A, B, a, b, h, copies).
+# A×B is the top (large) face of one copy, a×b its outlet; copies sit side by
+# side along the body length, so copies × A equals the body length.
+_DLMC_HOPPERS_IN = {
+    1: [
+        ("single outlet",  39.47609,  68.8421, 9.88,   9.88, 60,    1),
+    ],
+    2: [
+        ("dual outlet",    39.47609,  68.8421, 9.88,   9.88, 60,    2),
+        ("single outlet",  78.95218,  68.8421, 9.88,   9.88, 72,    1),
+        ("through hopper", 78.95218,  68.8421, 30.81,  9.75, 54,    1),
+    ],
+    3: [
+        ("triple outlet",  39.47609,  68.8421, 9.88,   9.88, 60,    3),
+        ("single outlet",  118.42827, 68.8421, 9.88,   9.88, 93.25, 1),
+        ("through hopper", 118.42827, 68.8421, 70.39,  9.71, 54,    1),
+    ],
+    4: [
+        ("four outlets",   39.47609,  68.8421, 9.88,   9.88, 60,    4),
+        ("dual outlet",    78.95218,  68.8421, 9.88,   9.88, 72,    2),
+        ("through hopper", 157.90436, 68.8421, 109.87, 9.70, 54,    1),
+    ],
 }
+
+
+def _dlmc_body(w, h):
+    return {
+        "type": "cuboid",
+        "a": in_to_m(w * _DLMC_MODULE_A_IN),
+        "b": in_to_m(_DLMC_B_IN),
+        "h": in_to_m(_DLMC_BODY_H_IN[h]),
+    }
+
+
+def _dlmc_hopper(A, B, a, b, h, copies):
+    seg = {
+        "type": "truncated_rect_pyramid",
+        "A": in_to_m(A), "B": in_to_m(B), "a": in_to_m(a), "b": in_to_m(b), "h": in_to_m(h),
+    }
+    if copies > 1:
+        seg["cols"], seg["rows"] = copies, 1
+    return seg
+
+
+def _build_dlmc():
+    models = {}
+    for w, h in _DLMC_MODELS:
+        name = f"DLMC {w}/{h}/15"
+        hoppers = {
+            hname: _dlmc_hopper(A, B, a, b, hh, n)
+            for hname, A, B, a, b, hh, n in _DLMC_HOPPERS_IN[w]
+        }
+        models[name] = DonaldsonModel(name, body=_dlmc_body(w, h), hoppers=hoppers)
+    return DonaldsonFamily("DLMC", models)
+
+
+DONALDSON_CATALOG = {"DLMC": _build_dlmc()}
 
 
 def list_families():
@@ -81,3 +135,14 @@ def list_models(family):
 def get_model(family, model):
     """Look up a DonaldsonModel by family and model name."""
     return DONALDSON_CATALOG[family].models[model]
+
+
+def list_hoppers(family, model):
+    """Hopper options available for a model (depends on its width)."""
+    return list(get_model(family, model).hoppers.keys())
+
+
+def get_segments(family, model, hopper):
+    """Segment stack [body, hopper] for a model and hopper choice (copies, safe to edit)."""
+    m = get_model(family, model)
+    return [copy.deepcopy(m.body), copy.deepcopy(m.hoppers[hopper])]

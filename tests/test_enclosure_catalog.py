@@ -71,3 +71,8 @@ def test_dlmc_max_pred_matches_data_sheet():
     }
     assert {m.split()[1].rsplit("/", 1)[0]: get_max_pred("DLMC", m)
             for m in list_models("DLMC")} == expected
+
+
+def test_dlmc_defaults_to_flexible_filters():
+    from core.enclosure_catalog import get_flexible_filters
+    assert get_flexible_filters("DLMC") is True

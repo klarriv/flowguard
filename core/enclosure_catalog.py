@@ -51,6 +51,9 @@ class DonaldsonFamily:
     """A Donaldson product family, grouping several models."""
     name: str
     models: dict  # model name -> DonaldsonModel
+    # Default for the NFPA 68 §8.7.2 flexible-filter question (filters hang
+    # above the vent, no internal restraint keeping a free vent path).
+    flexible_filters: bool = False
 
 
 # ── DLMC source data (inches, as in the spreadsheet) ──────────────────────────
@@ -129,7 +132,7 @@ def _build_dlmc():
         models[name] = DonaldsonModel(
             name, body=_dlmc_body(w, h), hoppers=hoppers, max_pred=_DLMC_MAX_PRED_BAR[(w, h)],
         )
-    return DonaldsonFamily("DLMC", models)
+    return DonaldsonFamily("DLMC", models, flexible_filters=True)
 
 
 DONALDSON_CATALOG = {"DLMC": _build_dlmc()}
@@ -164,3 +167,8 @@ def get_segments(family, model, hopper):
 def get_max_pred(family, model):
     """Manufacturer's maximum Pred [bar-g] for a model, or None if not published."""
     return get_model(family, model).max_pred
+
+
+def get_flexible_filters(family):
+    """Default answer to the NFPA 68 §8.7.2 flexible-filter question for a family."""
+    return DONALDSON_CATALOG[family].flexible_filters

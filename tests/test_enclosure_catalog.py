@@ -60,3 +60,14 @@ def test_get_segments_returns_copies():
     segs[1]["h"] = 999.0
     fresh = get_segments("DLMC", "DLMC 1/2/15", "single outlet")
     assert fresh[0]["a"] != 999.0 and fresh[1]["h"] != 999.0
+
+
+def test_dlmc_max_pred_matches_data_sheet():
+    from core.enclosure_catalog import get_max_pred
+    expected = {
+        "1/2": 0.37, "1/3": 0.35, "1/4": 0.33, "2/2": 0.37, "1/5": 0.31, "2/3": 0.35,
+        "2/4": 0.33, "3/3": 0.35, "2/5": 0.31, "2/6": 0.29, "3/5": 0.31, "2/8": 0.25,
+        "3/6": 0.29, "4/5": 0.31, "3/8": 0.25, "4/8": 0.25,
+    }
+    assert {m.split()[1].rsplit("/", 1)[0]: get_max_pred("DLMC", m)
+            for m in list_models("DLMC")} == expected

@@ -6,7 +6,9 @@ schema) for common enclosure shapes and for named Donaldson dust-collector
 models. All dimensions returned are SI (metres).
 
 Donaldson DLMC data comes from "DLMC Dirty Side Dimensions.xlsx"
-(flowguard-app/docs_for_claude_code/Donaldson db). It is transcribed here in
+(flowguard-app/docs_for_claude_code/Donaldson db). Maximum Pred per model comes
+from the Dalamatic Cased Technical Data Sheet ("Max Pred (bar)" column,
+screenshot in the same folder). Dimensions are transcribed here in
 inches, as in the sheet, and converted to metres with core.units at import.
 Each model is a rectangular body (cuboid) plus one hopper chosen from the
 options available for its width; a hopper may be several identical copies
@@ -41,6 +43,7 @@ class DonaldsonModel:
     name: str
     body: dict                                      # cuboid segment [m]
     hoppers: dict = field(default_factory=dict)     # hopper name -> segment [m]
+    max_pred: float | None = None                   # maximum Pred [bar-g]
 
 
 @dataclass
@@ -48,6 +51,9 @@ class DonaldsonFamily:
     """A Donaldson product family, grouping several models."""
     name: str
     models: dict  # model name -> DonaldsonModel
+    # Default for the NFPA 68 §8.7.2 flexible-filter question (filters hang
+    # above the vent, no internal restraint keeping a free vent path).
+    flexible_filters: bool = False
 
 
 # ── DLMC source data (inches, as in the spreadsheet) ──────────────────────────
@@ -62,6 +68,14 @@ _DLMC_MODELS = [
     (1, 2), (1, 3), (1, 4), (2, 2), (1, 5), (2, 3), (2, 4), (3, 3),
     (2, 5), (2, 6), (3, 5), (2, 8), (3, 6), (4, 5), (3, 8), (4, 8),
 ]
+
+# Maximum Pred [bar-g] per (W, H), from the Dalamatic Cased Technical Data
+# Sheet. The sheet also lists 1/7/15 and 3/7/15 at 0.27 bar.
+_DLMC_MAX_PRED_BAR = {
+    (1, 2): 0.37, (1, 3): 0.35, (1, 4): 0.33, (2, 2): 0.37, (1, 5): 0.31, (2, 3): 0.35,
+    (2, 4): 0.33, (3, 3): 0.35, (2, 5): 0.31, (2, 6): 0.29, (3, 5): 0.31, (2, 8): 0.25,
+    (3, 6): 0.29, (4, 5): 0.31, (3, 8): 0.25, (4, 8): 0.25,
+}
 
 # Hopper options by body width W: (name, A, B, a, b, h, copies).
 # A×B is the top (large) face of one copy, a×b its outlet; copies sit side by
@@ -115,8 +129,10 @@ def _build_dlmc():
             hname: _dlmc_hopper(A, B, a, b, hh, n)
             for hname, A, B, a, b, hh, n in _DLMC_HOPPERS_IN[w]
         }
-        models[name] = DonaldsonModel(name, body=_dlmc_body(w, h), hoppers=hoppers)
-    return DonaldsonFamily("DLMC", models)
+        models[name] = DonaldsonModel(
+            name, body=_dlmc_body(w, h), hoppers=hoppers, max_pred=_DLMC_MAX_PRED_BAR[(w, h)],
+        )
+    return DonaldsonFamily("DLMC", models, flexible_filters=True)
 
 
 DONALDSON_CATALOG = {"DLMC": _build_dlmc()}
@@ -146,3 +162,13 @@ def get_segments(family, model, hopper):
     """Segment stack [body, hopper] for a model and hopper choice (copies, safe to edit)."""
     m = get_model(family, model)
     return [copy.deepcopy(m.body), copy.deepcopy(m.hoppers[hopper])]
+
+
+def get_max_pred(family, model):
+    """Manufacturer's maximum Pred [bar-g] for a model, or None if not published."""
+    return get_model(family, model).max_pred
+
+
+def get_flexible_filters(family):
+    """Default answer to the NFPA 68 §8.7.2 flexible-filter question for a family."""
+    return DONALDSON_CATALOG[family].flexible_filters

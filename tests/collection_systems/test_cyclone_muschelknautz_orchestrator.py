@@ -344,3 +344,93 @@ def test_workbook_inputs_with_book_slot_inlet_give_the_large_deltas():
 def test_workbook_psd_sums_to_one_and_has_placeholder_median():
     close(sum(b[2] for b in WB_BINS) / 100.0, 1.0, 1e-6)
     close(WB_PSD.median_um(), 36.7, 1e-2)  # not 3.4 µm: placeholder data
+
+
+# ── Per-interval breakdown (CycloneResult.psd_intervals) ─────────────────────
+
+def _assert_interval_sums(r):
+    ivs = r.psd_intervals
+    assert ivs
+    assert abs(sum(i.feed_fraction for i in ivs) - 1.0) < 1e-9
+    assert abs(sum(i.collected_fraction for i in ivs) - r.eta_overall) < 1e-9
+    assert abs(sum(i.emitted_fraction for i in ivs) - r.penetration) < 1e-9
+    assert abs(sum(i.collected_classification for i in ivs) - r.eta_classification) < 1e-9
+    for i in ivs:
+        assert abs(i.collected_fraction + i.emitted_fraction - i.feed_fraction) < 1e-12
+        assert abs(i.collected_classification + i.emitted_classification - i.feed_fraction) < 1e-12
+
+
+def test_intervals_sum_to_headline_book_example():
+    r = cyclone_performance(GEOM, GAS, SOLIDS, BOOK_PSD, slope_m=5.0)
+    assert r.saltation  # the book case is in the saltation regime
+    _assert_interval_sums(r)
+    assert all(i.kind == "measured" for i in r.psd_intervals)
+    # ordered by size
+    los = [i.lower_um for i in r.psd_intervals]
+    assert los == sorted(los)
+
+
+def test_intervals_sum_to_headline_sparse_three_point_with_extrapolation():
+    psd = ParticleSizeDistribution.from_cumulative([2.0, 4.0, 10.0], [0.1, 0.5, 0.9])
+    r = cyclone_performance(GEOM, GAS, SOLIDS, psd)
+    _assert_interval_sums(r)
+    kinds = [i.kind for i in r.psd_intervals]
+    assert kinds == ["below_range", "measured", "measured", "above_range"]
+    below, above = r.psd_intervals[0], r.psd_intervals[-1]
+    assert below.is_extrapolated and above.is_extrapolated
+    assert not below.is_point_mass and above.is_point_mass
+    close(below.feed_fraction, r.extrapolated_mass_fraction, 1e-12)
+    close(below.feed_fraction, 0.1, 1e-12)
+    close(above.feed_fraction, 0.1, 1e-9)  # 1 - F(xmax)
+    assert above.lower_um == above.upper_um == 10.0
+    assert any("above the largest size" in n for n in r.psd_notes)
+
+
+def test_intervals_sum_to_headline_sieve_with_pan():
+    psd = ParticleSizeDistribution.from_sieve(
+        [20.0, 45.0, 75.0, 150.0], [0.10, 0.20, 0.30, 0.25], pan_fraction=0.15
+    )
+    r = cyclone_performance(GEOM, GAS, SOLIDS, psd)
+    _assert_interval_sums(r)
+    assert r.psd_intervals[0].kind == "below_range"
+    assert r.psd_intervals[-1].kind == "above_range"
+    close(r.psd_intervals[0].feed_fraction, 0.15, 1e-12)  # pan
+    close(r.psd_intervals[-1].feed_fraction, 0.25, 1e-12)  # coarsest screen
+
+
+def test_intervals_total_equals_classification_without_saltation():
+    r = cyclone_performance(GEOM, GAS, SOLIDS, BOOK_PSD, x_med_um=0.1)
+    assert not r.saltation
+    _assert_interval_sums(r)
+    for i in r.psd_intervals:
+        close(i.collected_fraction, i.collected_classification, 1e-12)
+
+
+def test_intervals_saltation_total_exceeds_classification():
+    r = cyclone_performance(GEOM, GAS, SOLIDS, BOOK_PSD)
+    assert r.saltation
+    assert all(i.collected_fraction >= i.collected_classification for i in r.psd_intervals)
+
+
+def test_intervals_monodisperse_single_point():
+    psd = ParticleSizeDistribution((10.0,), (1.0,))
+    r = cyclone_performance(GEOM, GAS, SOLIDS, psd)
+    assert len(r.psd_intervals) == 1
+    (only,) = r.psd_intervals
+    assert only.kind == "point" and only.is_point_mass and only.feed_fraction == 1.0
+    _assert_interval_sums(r)
+
+
+def test_intervals_for_median_size_only_run_is_one_point_interval():
+    r = cyclone_performance(GEOM, GAS, SOLIDS, x_med_um=10.0)
+    assert len(r.psd_intervals) == 1
+    only = r.psd_intervals[0]
+    assert only.kind == "point" and only.lower_um == only.upper_um == 10.0
+    _assert_interval_sums(r)
+
+
+def test_psd_intervals_method_matches_internal_masses():
+    psd = ParticleSizeDistribution.from_cumulative([2.0, 4.0, 10.0], [0.1, 0.5, 0.9])
+    pub = psd.intervals()
+    assert [(a, b, w) for a, b, w, _ in pub] == psd._masses()[0]
+    assert abs(sum(w for _, _, w, _ in pub) - 1.0) < 1e-12

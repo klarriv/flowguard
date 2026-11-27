@@ -16,6 +16,7 @@ import math
 from dataclasses import dataclass, field
 
 from collection_systems import cyclone_muschelknautz_equations as eq
+from core.units import kgm3_to_mgm3, kgs_to_kgh, m_to_um
 
 # Smooth-wall limit of the relative roughness ks/R (H&S p. 115 and p. 117).
 KS_OVER_R_MIN = 6e-4
@@ -458,7 +459,7 @@ class CycloneResult:
 
     @property
     def x50_um(self):
-        return self.x50 * 1e6
+        return m_to_um(self.x50)
 
     def classification_grade_efficiency(self, sizes_um):
         """Eq. 6.3.2 evaluated at each size [µm]: classification only."""
@@ -553,9 +554,10 @@ def _run(geometry, gas, solids, psd, m, x_med_um, upstream_velocity_m_s, rin=Non
         H_CS, U_t50, x50_st, x50_ns, stokes, x50, re_p = _step_cut_size(
             geometry, gas, solids, v_theta_cs
         )
-        co_L = eq.limit_loading(x50 * 1e6, x_med, co)
+        x50_um = m_to_um(x50)
+        co_L = eq.limit_loading(x50_um, x_med, co)
         saltation = co > co_L
-        eta_class = psd.classification_efficiency(x50 * 1e6, m)
+        eta_class = psd.classification_efficiency(x50_um, m)
         eta_new = (
             eq.overall_efficiency_saltation(co, co_L, eta_class) if saltation else eta_class
         )
@@ -600,7 +602,7 @@ def _run(geometry, gas, solids, psd, m, x_med_um, upstream_velocity_m_s, rin=Non
     # Share of the feed whose capture is decided by classification; the rest
     # (1 - share) is captured by mass loading (Eq. 6.5.1).
     share = co_L / co if saltation else 1.0
-    x50_um_final = x50 * 1e6
+    x50_um_final = m_to_um(x50)
     psd_intervals = []
     for lo, hi, w, kind in psd._labelled_masses()[0]:
         mean_eta = _interval_mean_eta(lo, hi, x50_um_final, m)
@@ -621,8 +623,8 @@ def _run(geometry, gas, solids, psd, m, x_med_um, upstream_velocity_m_s, rin=Non
         x50=x50, x50_stokes=x50_st, x50_non_stokes=x50_ns, stokes_regime=stokes,
         Re_p=re_p, co=co, x_med_um=x_med, co_L=co_L, saltation=saltation, m=m,
         eta_classification=eta_class, eta_overall=eta, penetration=penetration,
-        emission_kg_h=Q * loading * penetration * 3600.0,
-        emission_mg_m3=loading * penetration * 1e6,
+        emission_kg_h=kgs_to_kgh(Q * loading * penetration),
+        emission_mg_m3=kgm3_to_mgm3(loading * penetration),
         dp_body=dp_body, dp_core=dp_core, dp_acc=dp_acc, dp_total=dp_total,
         iterations=iterations, converged=converged,
         extrapolated_mass_fraction=psd.extrapolated_mass_fraction,

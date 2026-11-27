@@ -18,6 +18,8 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
+from core.units import mm_to_in
+
 
 def _fmt_mm(v: float) -> str:
     return str(int(v)) if v == int(v) else f"{v:g}"
@@ -25,7 +27,7 @@ def _fmt_mm(v: float) -> str:
 
 def _mm_to_in(v: float) -> int:
     """Nearest whole inch, rounding .5 up (not Python's banker's rounding)."""
-    return math.floor(v / 25.4 + 0.5)
+    return math.floor(mm_to_in(v) + 0.5)
 
 
 @dataclass

@@ -1,4 +1,5 @@
-"""Named unit conversions for flow, velocity, length and pressure.
+"""Named unit conversions for flow, velocity, length, pressure, mass flow and
+concentration.
 
 Built on the shared pint registry in ``core.utils``; no conversion factors are
 hand-typed. Functions are generated from the unit tables below as
@@ -14,11 +15,15 @@ from core.utils import u
 
 _FLOW = {"cfm": "foot**3/minute", "m3h": "meter**3/hour", "m3s": "meter**3/second"}
 _VELOCITY = {"fpm": "foot/minute", "ms": "meter/second"}
-_LENGTH = {"in": "inch", "mm": "millimeter", "m": "meter"}
+_LENGTH = {
+    "in": "inch", "ft": "foot", "um": "micrometer", "mm": "millimeter", "m": "meter",
+}
 _PRESSURE = {
     "inh2o": "inch_H2O", "inhg": "inch_Hg", "psi": "psi",
     "pa": "pascal", "bar": "bar", "atm": "atmosphere",
 }
+_MASS_FLOW = {"kgs": "kilogram/second", "kgh": "kilogram/hour"}
+_CONCENTRATION = {"kgm3": "kilogram/meter**3", "mgm3": "milligram/meter**3"}
 
 __all__ = ["convert_pressure"]
 
@@ -31,7 +36,7 @@ def _make(src_unit, dst_unit, name):
     return convert
 
 
-for _table in (_FLOW, _VELOCITY, _LENGTH, _PRESSURE):
+for _table in (_FLOW, _VELOCITY, _LENGTH, _PRESSURE, _MASS_FLOW, _CONCENTRATION):
     for _src, _src_unit in _table.items():
         for _dst, _dst_unit in _table.items():
             if _src != _dst:

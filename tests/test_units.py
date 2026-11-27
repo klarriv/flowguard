@@ -62,3 +62,23 @@ def test_convert_pressure_rejects_unknown_unit():
 
 def test_all_names_defined():
     assert all(hasattr(units, name) for name in units.__all__)
+
+
+def test_length_ft_in_um():
+    assert units.ft_to_m(1) == pytest.approx(0.3048, rel=1e-12)
+    assert units.in_to_mm(1) == pytest.approx(25.4, rel=1e-12)
+    assert units.in_to_m(1) == pytest.approx(0.0254, rel=1e-12)
+    assert units.mm_to_in(25.4) == pytest.approx(1.0, rel=1e-12)
+    assert units.m_to_um(1e-6) == pytest.approx(1.0, rel=1e-12)
+    assert units.um_to_m(25.58) == pytest.approx(25.58e-6, rel=1e-12)
+    assert units.m_to_ft(units.ft_to_m(12.5)) == pytest.approx(12.5, rel=1e-12)
+
+
+def test_mass_flow():
+    assert units.kgs_to_kgh(1) == pytest.approx(3600, rel=1e-12)
+    assert units.kgh_to_kgs(units.kgs_to_kgh(0.37)) == pytest.approx(0.37, rel=1e-12)
+
+
+def test_concentration():
+    assert units.kgm3_to_mgm3(1) == pytest.approx(1e6, rel=1e-12)
+    assert units.mgm3_to_kgm3(units.kgm3_to_mgm3(4.6e-5)) == pytest.approx(4.6e-5, rel=1e-12)

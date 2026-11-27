@@ -8,6 +8,7 @@ The workbook itself is never committed.
 """
 import math
 
+from collection_systems import cyclone_muschelknautz_equations as eq
 from collection_systems import cyclone_muschelknautz_orchestrator as orch
 from collection_systems.cyclone_muschelknautz_orchestrator import (
     CycloneGeometry,
@@ -434,3 +435,50 @@ def test_psd_intervals_method_matches_internal_masses():
     pub = psd.intervals()
     assert [(a, b, w) for a, b, w, _ in pub] == psd._masses()[0]
     assert abs(sum(w for _, _, w, _ in pub) - 1.0) < 1e-12
+
+
+# ── Case file "Emission Cyclones - Flow Guard Case File", tab 40-HE CYCLONE ──
+# Non-Stokes regime, Dd < Dx (control cylinder meets the cone), saltation.
+# Values pinned from the library (which follows H&S); the workbook differs in
+# x50 (19.06 µm) and coL (0.00230) because its vrCS cell (G45) uses H − a
+# instead of HCS (Eq. 6.2.5, p. 120 / p. 104) and it types xmed = 297 µm.
+CASE_GEOM = CycloneGeometry(
+    D=1.016, a=0.8636, b=0.254, Dx=0.6096, S=1.0541,
+    H=1.8288 + 1.14935, Hc=1.14935, Dd=0.40005,
+)
+CASE_GAS = GasProperties(density=1.2, viscosity=1.8e-5, flow_rate=2.655)
+CASE_SOLIDS = SolidProperties(
+    particle_density=1300.0, bulk_density=640.0, dust_loading=1.31, wall_roughness=4.6e-5,
+)
+# Tyler sieve: % retained on each screen (fine to coarse) and the pan.
+CASE_PSD = ParticleSizeDistribution.from_sieve(
+    [53.0, 74.0, 105.0, 149.0, 210.0, 297.0, 420.0, 595.0, 841.0, 1190.0],
+    [1 / 19, 2 / 19, 2 / 19, 2 / 19, 1 / 19, 2 / 19, 2 / 19, 2 / 19, 2 / 19, 2 / 19],
+    pan_fraction=1 / 19,
+)
+CASE_V_UPSTREAM = 11.72265739823579  # 2.655 m³/s in a 537 mm pipe (workbook G10)
+
+
+def test_case_file_40he_cyclone():
+    r = cyclone_performance(
+        CASE_GEOM, CASE_GAS, CASE_SOLIDS, psd=CASE_PSD, slope_m=3.0,
+        upstream_velocity_m_s=CASE_V_UPSTREAM,
+    )
+    assert not r.stokes_regime
+    assert r.saltation
+    close(r.H_CS, 1.53303, 1e-3)  # shortened by the cone since Dd < Dx (p. 104)
+    close(r.x50_um, 25.58, 1e-3)
+    close(r.co_L, 0.002826, 1e-3)
+    close(r.dp_body, 98.43, 1e-3)
+    close(r.dp_core, 322.23, 1e-3)
+    close(r.dp_acc, 11.394, 1e-3)
+    close(r.dp_total, 432.05, 1e-3)
+
+
+def test_case_file_excel_vrcs_explains_its_cut_size():
+    # Eq. 6.2.6 fed the workbook's own vrCS (G45 = 0.6556 m/s, from H − a) and
+    # vθCS (G38) reproduces the workbook's x50 (G49 = 19.06 µm); with that x50
+    # and the typed xmed = 297 µm, Eq. 6.4.1 reproduces its coL (G52).
+    x50 = eq.cut_size_non_stokes(1.8e-5, 1.2, 0.6556193087950964, 1300.0, 9.923069963240499, 0.3048)
+    close(x50 * 1e6, 19.0616, 1e-4)
+    close(eq.limit_loading(19.06164553540432, 297.0, 1.31 / 1.2), 0.0022964524, 1e-6)

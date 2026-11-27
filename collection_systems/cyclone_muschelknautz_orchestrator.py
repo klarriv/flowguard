@@ -123,6 +123,16 @@ def _softplus(t):
     return max(t, 0.0) + math.log1p(math.exp(-abs(t)))
 
 
+def _interval_mean_eta(lo, hi, x50_um, m):
+    """Mean of η(x) = 1/(1 + (x50/x)^m) over an interval with mass spread
+    uniformly in ln x, in closed form; a point mass (hi == lo) gives η(lo)."""
+    if hi == lo:
+        return eq.grade_efficiency(lo, x50_um, m)
+    g_hi = _softplus(m * math.log(hi / x50_um)) / m
+    g_lo = _softplus(m * math.log(lo / x50_um)) / m
+    return (g_hi - g_lo) / (math.log(hi) - math.log(lo))
+
+
 @dataclass(frozen=True)
 class ParticleSizeDistribution:
     """Feed particle size distribution held as a cumulative undersize curve
@@ -253,13 +263,19 @@ class ParticleSizeDistribution:
     def _masses(self):
         """Return (intervals, notes, extrapolated_fraction) where intervals is
         a list of (lo_um, hi_um, mass); lo == hi means a point mass."""
+        labelled, notes, extrapolated = self._labelled_masses()
+        return [(lo, hi, w) for lo, hi, w, _ in labelled], notes, extrapolated
+
+    def _labelled_masses(self):
+        """Like ``_masses`` but each interval is (lo_um, hi_um, mass, kind)
+        with kind one of "below_range", "measured", "above_range", "point"."""
         sizes, cum = self.sizes_um, self.cumulative
         notes = []
         if len(sizes) == 1:
             notes.append(
                 f"Single point: monodisperse feed of 100 % at {sizes[0]:g} µm."
             )
-            return [(sizes[0], sizes[0], 1.0)], notes, 0.0
+            return [(sizes[0], sizes[0], 1.0, "point")], notes, 0.0
 
         top = cum[-1]
         scale = 1.0
@@ -276,7 +292,7 @@ class ParticleSizeDistribution:
         if cum[0] > 0:
             width = math.log(sizes[1] / sizes[0])
             lo = sizes[0] * math.exp(-width)
-            intervals.append((lo, sizes[0], cum[0]))
+            intervals.append((lo, sizes[0], cum[0], "below_range"))
             pct = 100.0 * cum[0]
             notes.append(
                 f"{pct:.1f} % of the mass lies below the smallest size of {sizes[0]:g} µm "
@@ -289,10 +305,10 @@ class ParticleSizeDistribution:
                 )
         for lo, hi, c0, c1 in zip(sizes, sizes[1:], cum, cum[1:]):
             if c1 > c0:
-                intervals.append((lo, hi, c1 - c0))
+                intervals.append((lo, hi, c1 - c0, "measured"))
         if cum[-1] < 1.0:
             rest = 1.0 - cum[-1]
-            intervals.append((sizes[-1], sizes[-1], rest))
+            intervals.append((sizes[-1], sizes[-1], rest, "above_range"))
             notes.append(
                 f"{100.0 * rest:.1f} % of the mass lies above the largest size of "
                 f"{sizes[-1]:g} µm and was treated as a point mass at {sizes[-1]:g} µm."
@@ -322,23 +338,61 @@ class ParticleSizeDistribution:
             running += w
         return intervals[-1][1]
 
+    def intervals(self):
+        """Size intervals of the feed as ``(lower_um, upper_um, mass_fraction,
+        kind)`` tuples, ordered by size. ``kind`` is "measured" for intervals
+        between knots, "below_range" for the extra interval below the smallest
+        size, "above_range" for the point mass above the largest size
+        (lower == upper) and "point" for a single-point (monodisperse) PSD.
+        Zero-mass measured intervals are omitted. Mass fractions sum to 1."""
+        return tuple(self._labelled_masses()[0])
+
     def classification_efficiency(self, x50_um, m):
         """Σ ηi·ΔMFi of Eq. 6.3.3, integrated exactly per interval."""
         intervals, _, _ = self._masses()
         total = 0.0
         for lo, hi, w in intervals:
-            if hi == lo:
-                total += w * eq.grade_efficiency(lo, x50_um, m)
-                continue
-            g_hi = _softplus(m * math.log(hi / x50_um)) / m
-            g_lo = _softplus(m * math.log(lo / x50_um)) / m
-            total += w * (g_hi - g_lo) / (math.log(hi) - math.log(lo))
+            total += w * _interval_mean_eta(lo, hi, x50_um, m)
         return total
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Result
 # ──────────────────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class PsdIntervalResult:
+    """Fate of one feed size interval; all fractions are fractions of the
+    total feed mass (0-1), sizes in µm.
+
+    ``kind`` is "measured", "below_range" (extrapolated interval below the
+    smallest size), "above_range" (point mass above the largest size) or
+    "point" (monodisperse feed); for the last two ``upper_um == lower_um``.
+
+    ``collected_fraction`` / ``emitted_fraction`` are the total split, including
+    the mass-loading (saltation) share, and sum over all intervals to
+    ``eta_overall`` / ``penetration``. ``collected_classification`` /
+    ``emitted_classification`` are the classification-only split (sum to
+    ``eta_classification`` / ``1 - eta_classification``); identical to the
+    total when there is no saltation. Collected + emitted = feed_fraction.
+    """
+    lower_um: float
+    upper_um: float
+    kind: str
+    feed_fraction: float
+    collected_fraction: float
+    emitted_fraction: float
+    collected_classification: float
+    emitted_classification: float
+
+    @property
+    def is_extrapolated(self):
+        return self.kind in ("below_range", "above_range")
+
+    @property
+    def is_point_mass(self):
+        return self.upper_um == self.lower_um
+
 
 @dataclass(frozen=True)
 class CycloneResult:
@@ -397,6 +451,10 @@ class CycloneResult:
     extrapolated_mass_fraction: float
     psd_notes: tuple = field(default_factory=tuple)
     warnings: tuple = field(default_factory=tuple)
+    # Per-interval fate of the feed (tuple of PsdIntervalResult, ordered by
+    # size: below_range, measured..., above_range). For a median-size-only run
+    # (psd=None) this is a single "point" interval at x_med_um.
+    psd_intervals: tuple = field(default_factory=tuple)
 
     @property
     def x50_um(self):
@@ -539,6 +597,22 @@ def _run(geometry, gas, solids, psd, m, x_med_um, upstream_velocity_m_s, rin=Non
     notes = psd.notes
     warnings.extend(n for n in notes if n.startswith("Warning"))
 
+    # Share of the feed whose capture is decided by classification; the rest
+    # (1 - share) is captured by mass loading (Eq. 6.5.1).
+    share = co_L / co if saltation else 1.0
+    x50_um_final = x50 * 1e6
+    psd_intervals = []
+    for lo, hi, w, kind in psd._labelled_masses()[0]:
+        mean_eta = _interval_mean_eta(lo, hi, x50_um_final, m)
+        coll_class = w * mean_eta
+        coll_total = w * ((1.0 - share) + share * mean_eta)
+        psd_intervals.append(PsdIntervalResult(
+            lower_um=lo, upper_um=hi, kind=kind, feed_fraction=w,
+            collected_fraction=coll_total, emitted_fraction=w - coll_total,
+            collected_classification=coll_class,
+            emitted_classification=w - coll_class,
+        ))
+
     return CycloneResult(
         R=R, Rx=Rx, Rd=Rd, Rin=rin, Rm=Rm, A_R=A_R, H_CS=H_CS,
         xi=xi, alpha=alpha, v_in=v_in, v_theta_w=v_theta_w, v_z_w=v_z_w,
@@ -553,6 +627,7 @@ def _run(geometry, gas, solids, psd, m, x_med_um, upstream_velocity_m_s, rin=Non
         iterations=iterations, converged=converged,
         extrapolated_mass_fraction=psd.extrapolated_mass_fraction,
         psd_notes=notes, warnings=tuple(warnings),
+        psd_intervals=tuple(psd_intervals),
     )
 
 

@@ -8,6 +8,7 @@ The workbook itself is never committed.
 """
 import math
 
+from collection_systems import cyclone_muschelknautz_equations as eq
 from collection_systems import cyclone_muschelknautz_orchestrator as orch
 from collection_systems.cyclone_muschelknautz_orchestrator import (
     CycloneGeometry,
@@ -344,3 +345,140 @@ def test_workbook_inputs_with_book_slot_inlet_give_the_large_deltas():
 def test_workbook_psd_sums_to_one_and_has_placeholder_median():
     close(sum(b[2] for b in WB_BINS) / 100.0, 1.0, 1e-6)
     close(WB_PSD.median_um(), 36.7, 1e-2)  # not 3.4 µm: placeholder data
+
+
+# ── Per-interval breakdown (CycloneResult.psd_intervals) ─────────────────────
+
+def _assert_interval_sums(r):
+    ivs = r.psd_intervals
+    assert ivs
+    assert abs(sum(i.feed_fraction for i in ivs) - 1.0) < 1e-9
+    assert abs(sum(i.collected_fraction for i in ivs) - r.eta_overall) < 1e-9
+    assert abs(sum(i.emitted_fraction for i in ivs) - r.penetration) < 1e-9
+    assert abs(sum(i.collected_classification for i in ivs) - r.eta_classification) < 1e-9
+    for i in ivs:
+        assert abs(i.collected_fraction + i.emitted_fraction - i.feed_fraction) < 1e-12
+        assert abs(i.collected_classification + i.emitted_classification - i.feed_fraction) < 1e-12
+
+
+def test_intervals_sum_to_headline_book_example():
+    r = cyclone_performance(GEOM, GAS, SOLIDS, BOOK_PSD, slope_m=5.0)
+    assert r.saltation  # the book case is in the saltation regime
+    _assert_interval_sums(r)
+    assert all(i.kind == "measured" for i in r.psd_intervals)
+    # ordered by size
+    los = [i.lower_um for i in r.psd_intervals]
+    assert los == sorted(los)
+
+
+def test_intervals_sum_to_headline_sparse_three_point_with_extrapolation():
+    psd = ParticleSizeDistribution.from_cumulative([2.0, 4.0, 10.0], [0.1, 0.5, 0.9])
+    r = cyclone_performance(GEOM, GAS, SOLIDS, psd)
+    _assert_interval_sums(r)
+    kinds = [i.kind for i in r.psd_intervals]
+    assert kinds == ["below_range", "measured", "measured", "above_range"]
+    below, above = r.psd_intervals[0], r.psd_intervals[-1]
+    assert below.is_extrapolated and above.is_extrapolated
+    assert not below.is_point_mass and above.is_point_mass
+    close(below.feed_fraction, r.extrapolated_mass_fraction, 1e-12)
+    close(below.feed_fraction, 0.1, 1e-12)
+    close(above.feed_fraction, 0.1, 1e-9)  # 1 - F(xmax)
+    assert above.lower_um == above.upper_um == 10.0
+    assert any("above the largest size" in n for n in r.psd_notes)
+
+
+def test_intervals_sum_to_headline_sieve_with_pan():
+    psd = ParticleSizeDistribution.from_sieve(
+        [20.0, 45.0, 75.0, 150.0], [0.10, 0.20, 0.30, 0.25], pan_fraction=0.15
+    )
+    r = cyclone_performance(GEOM, GAS, SOLIDS, psd)
+    _assert_interval_sums(r)
+    assert r.psd_intervals[0].kind == "below_range"
+    assert r.psd_intervals[-1].kind == "above_range"
+    close(r.psd_intervals[0].feed_fraction, 0.15, 1e-12)  # pan
+    close(r.psd_intervals[-1].feed_fraction, 0.25, 1e-12)  # coarsest screen
+
+
+def test_intervals_total_equals_classification_without_saltation():
+    r = cyclone_performance(GEOM, GAS, SOLIDS, BOOK_PSD, x_med_um=0.1)
+    assert not r.saltation
+    _assert_interval_sums(r)
+    for i in r.psd_intervals:
+        close(i.collected_fraction, i.collected_classification, 1e-12)
+
+
+def test_intervals_saltation_total_exceeds_classification():
+    r = cyclone_performance(GEOM, GAS, SOLIDS, BOOK_PSD)
+    assert r.saltation
+    assert all(i.collected_fraction >= i.collected_classification for i in r.psd_intervals)
+
+
+def test_intervals_monodisperse_single_point():
+    psd = ParticleSizeDistribution((10.0,), (1.0,))
+    r = cyclone_performance(GEOM, GAS, SOLIDS, psd)
+    assert len(r.psd_intervals) == 1
+    (only,) = r.psd_intervals
+    assert only.kind == "point" and only.is_point_mass and only.feed_fraction == 1.0
+    _assert_interval_sums(r)
+
+
+def test_intervals_for_median_size_only_run_is_one_point_interval():
+    r = cyclone_performance(GEOM, GAS, SOLIDS, x_med_um=10.0)
+    assert len(r.psd_intervals) == 1
+    only = r.psd_intervals[0]
+    assert only.kind == "point" and only.lower_um == only.upper_um == 10.0
+    _assert_interval_sums(r)
+
+
+def test_psd_intervals_method_matches_internal_masses():
+    psd = ParticleSizeDistribution.from_cumulative([2.0, 4.0, 10.0], [0.1, 0.5, 0.9])
+    pub = psd.intervals()
+    assert [(a, b, w) for a, b, w, _ in pub] == psd._masses()[0]
+    assert abs(sum(w for _, _, w, _ in pub) - 1.0) < 1e-12
+
+
+# ── Case file "Emission Cyclones - Flow Guard Case File", tab 40-HE CYCLONE ──
+# Non-Stokes regime, Dd < Dx (control cylinder meets the cone), saltation.
+# Values pinned from the library (which follows H&S); the workbook differs in
+# x50 (19.06 µm) and coL (0.00230) because its vrCS cell (G45) uses H − a
+# instead of HCS (Eq. 6.2.5, p. 120 / p. 104) and it types xmed = 297 µm.
+CASE_GEOM = CycloneGeometry(
+    D=1.016, a=0.8636, b=0.254, Dx=0.6096, S=1.0541,
+    H=1.8288 + 1.14935, Hc=1.14935, Dd=0.40005,
+)
+CASE_GAS = GasProperties(density=1.2, viscosity=1.8e-5, flow_rate=2.655)
+CASE_SOLIDS = SolidProperties(
+    particle_density=1300.0, bulk_density=640.0, dust_loading=1.31, wall_roughness=4.6e-5,
+)
+# Tyler sieve: % retained on each screen (fine to coarse) and the pan.
+CASE_PSD = ParticleSizeDistribution.from_sieve(
+    [53.0, 74.0, 105.0, 149.0, 210.0, 297.0, 420.0, 595.0, 841.0, 1190.0],
+    [1 / 19, 2 / 19, 2 / 19, 2 / 19, 1 / 19, 2 / 19, 2 / 19, 2 / 19, 2 / 19, 2 / 19],
+    pan_fraction=1 / 19,
+)
+CASE_V_UPSTREAM = 11.72265739823579  # 2.655 m³/s in a 537 mm pipe (workbook G10)
+
+
+def test_case_file_40he_cyclone():
+    r = cyclone_performance(
+        CASE_GEOM, CASE_GAS, CASE_SOLIDS, psd=CASE_PSD, slope_m=3.0,
+        upstream_velocity_m_s=CASE_V_UPSTREAM,
+    )
+    assert not r.stokes_regime
+    assert r.saltation
+    close(r.H_CS, 1.53303, 1e-3)  # shortened by the cone since Dd < Dx (p. 104)
+    close(r.x50_um, 25.58, 1e-3)
+    close(r.co_L, 0.002826, 1e-3)
+    close(r.dp_body, 98.43, 1e-3)
+    close(r.dp_core, 322.23, 1e-3)
+    close(r.dp_acc, 11.394, 1e-3)
+    close(r.dp_total, 432.05, 1e-3)
+
+
+def test_case_file_excel_vrcs_explains_its_cut_size():
+    # Eq. 6.2.6 fed the workbook's own vrCS (G45 = 0.6556 m/s, from H − a) and
+    # vθCS (G38) reproduces the workbook's x50 (G49 = 19.06 µm); with that x50
+    # and the typed xmed = 297 µm, Eq. 6.4.1 reproduces its coL (G52).
+    x50 = eq.cut_size_non_stokes(1.8e-5, 1.2, 0.6556193087950964, 1300.0, 9.923069963240499, 0.3048)
+    close(x50 * 1e6, 19.0616, 1e-4)
+    close(eq.limit_loading(19.06164553540432, 297.0, 1.31 / 1.2), 0.0022964524, 1e-6)
